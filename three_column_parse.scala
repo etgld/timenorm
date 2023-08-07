@@ -15,26 +15,30 @@ object ThreeColCSVNorm {
     }
   }
 
-  def getDCT(filename: String): TimeSpan = {
+  def getDCT(filename: String, consoleWriter: PrintWriter): TimeSpan = {
     val aprilFools = TimeSpan.of(2017, 4, 1)
     filename.split("_").map(_.trim) match {
       case Array(pt, noteType, textDate, index) =>
         val Array(month, day, year) = textDate.split("-").map(_.trim)
         val parsedSpan = TimeSpan.of(year.toInt, month.toInt, day.toInt)
         val tmlVal = parsedSpan.timeMLValue
-        println(s"Parsed span $tmlVal for node $filename")
+        consoleWriter.println(s"Parsed span $tmlVal for node $filename")
         return parsedSpan
       //   case elems =>
       //     val Array( month, day, year ) = elems.slice( 2, 5 )
       //     return TimeSpan.of( year.toInt, month.toInt, day.toInt )
       // }
       case _ =>
-        println(s"DCT parse error for $filename , using April Fool's 2017")
+        consoleWriter.println(
+          s"DCT parse error for $filename , using April Fool's 2017"
+        )
         return aprilFools
     }
   }
 
   def processFile(inFile: File, outFile: File) = {
+
+    val consoleWriter = new PrintWriter(new File("parse.log"))
 
     def nonseparatedDCT(dct: String): Boolean = {
       return dct.length == 8 && dct.forall(Character.isDigit)
@@ -57,7 +61,7 @@ object ThreeColCSVNorm {
 
     for (line <- inFileContent) {
       val elems = line.split(",") // .map( _.trim )
-      // println(line)
+      // consoleWriter.println(line)
 
       val filename = elems(0).trim
       val sentence = elems
@@ -83,15 +87,16 @@ object ThreeColCSVNorm {
           TimeSpan.of(year.toInt, month.toInt, date.toInt)
         }
         case _ => {
-          println(
+          consoleWriter.println(
             s"MALFORMED DCT $rawDCT at $filename, parsing filename for DCT"
           )
-          getDCT(filename)
+          getDCT(filename, consoleWriter)
         }
       }
 
       val timex = elems.slice(2, elems.length).mkString(",")
-      val timeML = getTimeML(filename, documentCreationTime, timex)
+      val timeML =
+        getTimeML(filename, documentCreationTime, timex, consoleWriter)
 
       val outStr =
         Array(filename.toString, documentCreationTime.timeMLValue, timeML)
@@ -102,6 +107,7 @@ object ThreeColCSVNorm {
 
     inFileBuffer.close
     outFileWriter.close()
+    consoleWriter.close()
   }
 
   def getListOfFiles(dir: File, extensions: List[String]): List[File] = {
@@ -110,18 +116,25 @@ object ThreeColCSVNorm {
     }
   }
 
-  def getTimeML(filename: String, DCT: TimeSpan, timex: String): String = {
+  def getTimeML(
+      filename: String,
+      DCT: TimeSpan,
+      timex: String,
+      consoleWriter: PrintWriter
+  ): String = {
     val dateElems = timex.split("/")
 
-    if (dateElems.length == 3 && dateElems.forall(_.forall(Character.isDigit))) {
+    if (
+      dateElems.length == 3 && dateElems.forall(_.forall(Character.isDigit))
+    ) {
       val month = dateElems(0).toInt
 
       val date = dateElems(1).toInt
 
       val raw_year = dateElems(2)
       val year = raw_year match {
-        //11 -> 2011
-        case raw_year : String if (raw_year.length == 2) =>
+        // 11 -> 2011
+        case raw_year: String if (raw_year.length == 2) =>
           raw_year.toInt + 2000
         case _ =>
           raw_year.toInt
@@ -129,17 +142,19 @@ object ThreeColCSVNorm {
 
       val parsedDate = TimeSpan.of(year, month, date)
       val finalDate = parsedDate.timeMLValue
-      println(s"Manually parsed date $finalDate")
+      // consoleWriter.println(s"Manually parsed date $finalDate")
       return finalDate
     }
 
     parser.parse(timex, DCT) match {
       case Success(temporal) =>
         val finalValue = temporal.timeMLValue
-        println(s"Timenorm parsed $finalValue")
+        // consoleWriter.println(s"Timenorm parsed $finalValue")
         return finalValue
       case Failure(f) =>
-        println(s"failed to parse timex: $timex at node $filename")
+        consoleWriter.println(
+          s"failed to parse timex: \" $timex \" at node $filename"
+        )
         return ""
     }
   }
