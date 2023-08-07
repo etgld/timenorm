@@ -1,56 +1,103 @@
-import org.clulab.timenorm.scfg._, scala.util.Success, scala.util.Failure, scala.util.Try
+import org.clulab.timenorm.scfg._, scala.util.Success, scala.util.Failure,
+  scala.util.Try
 import java.io._
 
 object ThreeColCSVNorm {
 
   val parser = TemporalExpressionParser.en
 
-
-
-  def process( inDir : String ) = {
+  def process(inDir: String) = {
     val outDir = "/home/etg/three_column_timenorm_processed/"
-    for ( inFile <- getListOfFiles( new File( inDir ), List( "csv" ) ) ){
+    for (inFile <- getListOfFiles(new File(inDir), List("csv"))) {
       val outFileName = outDir + inFile.getName()
-      val outFile = new File( outFileName )
-      processFile( inFile, outFile )
+      val outFile = new File(outFileName)
+      processFile(inFile, outFile)
     }
   }
 
-  def processFile( inFile: File, outFile: File ) = {
+  def getDCT(filename: String): TimeSpan = {
+    val aprilFools = TimeSpan.of(2017, 4, 1)
+    filename.split("_").map(_.trim) match {
+      case Array(pt, noteType, textDate, index) =>
+        val Array(month, day, year) = textDate.split("-").map(_.trim)
+        val parsedSpan = TimeSpan.of(year.toInt, month.toInt, day.toInt)
+        val tmlVal = parsedSpan.timeMLValue
+        println(s"Parsed span $tmlVal for node $filename")
+        return parsedSpan
+      //   case elems =>
+      //     val Array( month, day, year ) = elems.slice( 2, 5 )
+      //     return TimeSpan.of( year.toInt, month.toInt, day.toInt )
+      // }
+      case _ =>
+        println(s"DCT parse error for $filename , using April Fool's 2017")
+        return aprilFools
+    }
+  }
 
-    val aprilFools = TimeSpan.of( 2017, 4, 1 )
-    val inFileBuffer = io.Source.fromFile( inFile )
-    val outFileWriter = new BufferedWriter( new FileWriter( outFile ) )
+  def processFile(inFile: File, outFile: File) = {
+
+    def nonseparatedDCT(dct: String): Boolean = {
+      return dct.length == 8 && dct.forall(Character.isDigit)
+    }
+
+    def separatedDCT(dct: String): Boolean = {
+      return dct.length == 10 && dct
+        .split("-")
+        .forall(_.forall(Character.isDigit))
+    }
+    val aprilFools = TimeSpan.of(2017, 4, 1)
+    val inFileBuffer = io.Source.fromFile(inFile)
+    val outFileWriter = new BufferedWriter(new FileWriter(outFile))
 
     val inFileLines = inFileBuffer.getLines.toList
-    val header = inFileLines( 0 )
-    val inFileContent = inFileLines.drop( 1 ) // skip header
+    val header = inFileLines(0)
+    val inFileContent = inFileLines.drop(1) // skip header
 
-    outFileWriter.write( header + ",timeML\n" )
+    outFileWriter.write(header + ",timeML\n")
 
-    for ( line <- inFileContent ){
-      val elems = line.split( "," ) //.map( _.trim )
+    for (line <- inFileContent) {
+      val elems = line.split(",") // .map( _.trim )
       // println(line)
 
-      val filename = elems( 0 ).trim
-      val sentence = elems.drop( 2 ).dropRight( 1 ).mkString( "," ) // don't get filename and DCT or prediction at the end
+      val filename = elems(0).trim
+      val sentence = elems
+        .drop(2)
+        .dropRight(1)
+        .mkString(",") // don't get filename and DCT or prediction at the end
 
-      val rawDCT = elems( 1 )
+      val rawDCT = elems(1)
 
-      val year = rawDCT.slice( 0, 4 )
-      val month = rawDCT.slice( 4, 6 )
-      val date = rawDCT.slice( 6, rawDCT.length )
+      val documentCreationTime = rawDCT match {
+        case rawDCT: String if nonseparatedDCT(rawDCT) => {
+          val year = rawDCT.slice(0, 4)
+          val month = rawDCT.slice(4, 6)
+          val date = rawDCT.slice(6, rawDCT.length)
+          TimeSpan.of(year.toInt, month.toInt, date.toInt)
+        }
+        case rawDCT: String if separatedDCT(rawDCT) => {
+          val dctElems = rawDCT.split("-")
+          val year = dctElems(2)
+          val month = dctElems(0)
+          val date = dctElems(1)
 
-      val documentCreationTime = Try({TimeSpan.of( year.toInt, month.toInt, date.toInt )})
-        .recoverWith({case (e: Exception) => println(s"BAD DCT $rawDCT at $filename"); Failure(e);})
-        .getOrElse(aprilFools)
+          TimeSpan.of(year.toInt, month.toInt, date.toInt)
+        }
+        case _ => {
+          println(
+            s"MALFORMED DCT $rawDCT at $filename, parsing filename for DCT"
+          )
+          getDCT(filename)
+        }
+      }
 
-      val timex = elems.slice( 2, elems.length ).mkString( "," )
-      val timeML = getTimeML( filename, documentCreationTime, timex )
+      val timex = elems.slice(2, elems.length).mkString(",")
+      val timeML = getTimeML(filename, documentCreationTime, timex)
 
-      val outStr = Array( filename.toString , documentCreationTime.timeMLValue, timeML ).mkString( "," )
+      val outStr =
+        Array(filename.toString, documentCreationTime.timeMLValue, timeML)
+          .mkString(",")
 
-      outFileWriter.write( outStr + "\n" )
+      outFileWriter.write(outStr + "\n")
     }
 
     inFileBuffer.close
@@ -58,17 +105,41 @@ object ThreeColCSVNorm {
   }
 
   def getListOfFiles(dir: File, extensions: List[String]): List[File] = {
-    dir.listFiles.filter( _.isFile ).toList.filter { file =>
-        extensions.exists( file.getName.endsWith( _ ) )
+    dir.listFiles.filter(_.isFile).toList.filter { file =>
+      extensions.exists(file.getName.endsWith(_))
     }
   }
 
-  def getTimeML( filename: String, DCT: TimeSpan, timex: String ): String = {
-    parser.parse( timex, DCT ) match {
-      case Success( temporal ) =>
-        return temporal.timeMLValue
-      case Failure( f ) =>
-        println(s"failed to parse timex: <t> $timex </t>   at filename:   $filename")
+  def getTimeML(filename: String, DCT: TimeSpan, timex: String): String = {
+    val dateElems = timex.split("/")
+
+    if (dateElems.length == 3 && dateElems.forall(_.forall(Character.isDigit))) {
+      val month = dateElems(0).toInt
+
+      val date = dateElems(1).toInt
+
+      val raw_year = dateElems(2)
+      val year = raw_year match {
+        //11 -> 2011
+        case raw_year : String if (raw_year.length == 2) =>
+          raw_year.toInt + 2000
+        case _ =>
+          raw_year.toInt
+      }
+
+      val parsedDate = TimeSpan.of(year, month, date)
+      val finalDate = parsedDate.timeMLValue
+      println(s"Manually parsed date $finalDate")
+      return finalDate
+    }
+
+    parser.parse(timex, DCT) match {
+      case Success(temporal) =>
+        val finalValue = temporal.timeMLValue
+        println(s"Timenorm parsed $finalValue")
+        return finalValue
+      case Failure(f) =>
+        println(s"failed to parse timex: $timex at node $filename")
         return ""
     }
   }
