@@ -22,7 +22,7 @@ object ThreeColCSVNorm {
         val Array(month, day, year) = textDate.split("-").map(_.trim)
         val parsedSpan = TimeSpan.of(year.toInt, month.toInt, day.toInt)
         val tmlVal = parsedSpan.timeMLValue
-        consoleWriter.println(s"Parsed span $tmlVal for node $filename")
+        // consoleWriter.println(s"Parsed span $tmlVal for node $filename")
         return parsedSpan
       //   case elems =>
       //     val Array( month, day, year ) = elems.slice( 2, 5 )
@@ -54,7 +54,8 @@ object ThreeColCSVNorm {
     val outFileWriter = new BufferedWriter(new FileWriter(outFile))
 
     val inFileLines = inFileBuffer.getLines.toList
-    val header = inFileLines(0)
+    // val header = inFileLines(0)
+    val header = "node_id,DocTime,timeML"
     val inFileContent = inFileLines.drop(1) // skip header
 
     outFileWriter.write(header + ",timeML\n")
@@ -64,10 +65,10 @@ object ThreeColCSVNorm {
       // consoleWriter.println(line)
 
       val filename = elems(0).trim
-      val sentence = elems
-        .drop(2)
-        .dropRight(1)
-        .mkString(",") // don't get filename and DCT or prediction at the end
+      // val sentence = elems
+      //   .drop(2)
+      //   .dropRight(1)
+      //   .mkString(",") // don't get filename and DCT or prediction at the end
 
       val rawDCT = elems(1)
 
@@ -153,7 +154,7 @@ object ThreeColCSVNorm {
         return finalValue
       case Failure(f) =>
         consoleWriter.println(
-          s"failed to parse timex: \" $timex \" at node $filename"
+          s"failed to parse timex: \' $timex ' at node $filename"
         )
         return ""
     }
