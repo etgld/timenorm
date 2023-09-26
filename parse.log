@@ -1,0 +1,53 @@
+Aug 07, 2023 3:00:14 PM org.clulab.timenorm.scfg.TemporalExpressionParser parseAll
+WARNING: Expected no more than 2 parses for "about a year ago", found:
+  WithModifier(MoveEarlier(FindEnclosing(Present,Years),Simple(1,Years)),Approx)
+  MoveEarlier(FindEnclosing(Present,Years),WithModifier(Simple(1,Years),Approx))
+  MoveEarlier(Present,WithModifier(Simple(1,Years),Approx))
+  WithModifier(MoveEarlier(Present,Simple(1,Years)),Approx)
+Aug 07, 2023 3:00:14 PM org.clulab.timenorm.scfg.TemporalExpressionParser parseAll
+WARNING: Expected no more than 2 parses for "about two-weeks ago", found:
+  WithModifier(MoveEarlier(FindEnclosing(Present,Weeks),Simple(2,Weeks)),Approx)
+  WithModifier(MoveEarlier(Present,Simple(2,Weeks)),Approx)
+  MoveEarlier(Present,WithModifier(Simple(2,Weeks),Approx))
+  MoveEarlier(FindEnclosing(Present,Weeks),WithModifier(Simple(2,Weeks),Approx))
+
+
+failed to parse timex: ' at that time ' at node 4@e@ID093_CON_10-18-2011_1@dave
+failed to parse timex: ' At this point ' at node 4@e@ID093_SV_05-07-2013_1@dave
+failed to parse timex: ' At this point ' at node 18@e@ID093_SV_12-21-2012_1@dave
+failed to parse timex: ' presently ' at node 2@e@ID172_SV_02-08-2011_1@dave
+failed to parse timex: ' Wed-Thursday ' at node 8@e@ID172_PRG_10-18-2010_1@dave
+failed to parse timex: ' at the time ' at node 9@e@ID172_SV_09-01-2010_1@dave
+failed to parse timex: ' about 4 weeks from now ' at node 4@e@ID101_CON_03-29-2010_1@dave
+failed to parse timex: ' "December 2009 through February 16, 2010" ' at node 10@e@ID124_SV_04-16-2014_1@dave
+failed to parse timex: ' "December 2009 through February 16, 2010" ' at node 18@e@ID124_SV_04-16-2014_1@dave
+failed to parse timex: ' "December 2009 through February 16, 2010" ' at node 10@e@ID124_CON_02-23-2010_3@dave
+failed to parse timex: ' "December 2009 through February 16, 2010" ' at node 9@e@ID124_SV_12-18-2015_1@dave
+failed to parse timex: ' "December 2009 through February 16, 2010" ' at node 6@e@ID124_SV_10-30-2013_1@dave
+failed to parse timex: ' "December 2009 through February 16, 2010" ' at node 14@e@ID124_SV_10-30-2013_1@dave
+failed to parse timex: ' "December 2009 through February 16, 2010" ' at node 9@e@ID124_SV_12-17-2014_1@dave
+failed to parse timex: ' 24th February 2011 ' at node 10@e@ID012_SV_03-17-2011_1@gaby
+failed to parse timex: ' 24th February 2011 ' at node 11@e@ID012_SV_03-17-2011_1@gaby
+failed to parse timex: ' five to six-weeks ' at node 11@e@ID020_CON_05-04-2010_3@gaby
+failed to parse timex: ' three-and-a-half months ' at node 8@e@ID029_SV_02-24-2011_1@gaby
+MALFORMED DCT  at 16@e@ID029_CON_10-29-2010_1@gaby, parsing filename for DCT
+failed to parse timex: ' at this time ' at node 3@e@ID205_SV_10-12-2010_1@dave
+failed to parse timex: ' between 2008 and 2009 ' at node 11@e@ID205_CON_10-13-2010_2@dave
+failed to parse timex: ' four to six-months ' at node 3@e@ID132_SV_07-30-2010_1@dave
+failed to parse timex: ' at this time ' at node 8@e@ID132_SV_07-30-2010_1@dave
+failed to parse timex: ' four to six-months ' at node 11@e@ID132_CON_03-08-2010_1@dave
+failed to parse timex: ' over the weekend ' at node 5@e@ID044_MIS_05-28-2010_1@gaby
+failed to parse timex: ' within the next one-to-two weeks ' at node 11@e@ID044_CON_05-20-2010_2@gaby
+failed to parse timex: ' At this time ' at node 3@e@ID149_SV_04-04-2011_1@dave
+MALFORMED DCT -20-2011 at 1@e@ID149_THP_04-20-2011_1@dave, parsing filename for DCT
+failed to parse timex: ' -20-2011 ' at node 1@e@ID149_THP_04-20-2011_1@dave
+failed to parse timex: ' At this time ' at node 13@e@ID140_SV_11-16-2010_1@dave
+failed to parse timex: ' approximately one-week's time ' at node 11@e@ID140_SV_07-09-2010_1@dave
+failed to parse timex: ' at that time ' at node 14@e@ID140_SV_07-09-2010_1@dave
+failed to parse timex: ' at this time ' at node 10@e@ID140_SV_08-31-2010_1@dave
+failed to parse timex: ' at that time ' at node 6@e@ID165_MIS_08-13-2010_1@dave
+failed to parse timex: ' first week of December ' at node 3@e@ID164_MIS_10-04-2010_1@dave
+failed to parse timex: ' at this time ' at node 3@e@ID077_SV_10-09-2009_1@dave
+failed to parse timex: ' since that time ' at node 4@e@ID077_CON_05-01-2008_1@dave
+failed to parse timex: ' at this time ' at node 3@e@ID077_SV_05-29-2008_2@dave
+failed to parse timex: ' At this point ' at node 3@e@ID141_CON_04-08-2010_3@dave
