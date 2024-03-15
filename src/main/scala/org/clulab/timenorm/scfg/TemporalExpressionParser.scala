@@ -196,10 +196,10 @@ class TemporalExpressionParser(
             for (temporal <- temporals)
               yield temporal.timeMLValue
           val forPrints = temporals zip timeMLs
-          println("TimeML Value \t Raw Parse")
-          forPrints.foreach { case (temporal, timeML) =>
-            println(s"$timeML \t $temporal")
-          }
+          // println("TimeML Value \t Raw Parse")
+          // forPrints.foreach { case (temporal, timeML) =>
+          //   println(s"$timeML \t $temporal")
+          // }
           Success(temporals.toSeq.sorted(this.heuristicFor(anchor)))
         }
     }

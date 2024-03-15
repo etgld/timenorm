@@ -29,9 +29,9 @@ object ThreeColCSVNorm {
       //     return TimeSpan.of( year.toInt, month.toInt, day.toInt )
       // }
       case _ =>
-        consoleWriter.println(
-          s"DCT parse error for $filename , using April Fool's 2017"
-        )
+        // println(
+        //   s"DCT parse error for $filename , using April Fool's 2017"
+        // )
         return aprilFools
     }
   }
@@ -40,14 +40,17 @@ object ThreeColCSVNorm {
 
     val consoleWriter = new PrintWriter(new File("parse.log"))
 
-    def nonseparatedDCT(dct: String): Boolean = {
-      return dct.length == 8 && dct.forall(Character.isDigit)
+    val quotes = "\"\'".toSet
+
+    def nonseparatedDCT(rawDCT: String): Boolean = {
+      // val dct = rawDCT.filterNot(quotes).trim
+      return rawDCT.length == 8 // && rawDCT.forall(Character.isDigit)
     }
 
-    def separatedDCT(dct: String): Boolean = {
-      return dct.length == 10 && dct
-        .split("-")
-        .forall(_.forall(Character.isDigit))
+    def separatedDCT(rawDCT: String): Boolean = {
+      // val dct = rawDCT.filterNot(quotes).trim
+      return rawDCT.length == 10 && rawDCT.split("-").length == 3
+        // .forall(_.forall(Character.isDigit))
     }
     val aprilFools = TimeSpan.of(2017, 4, 1)
     val inFileBuffer = io.Source.fromFile(inFile)
@@ -62,6 +65,7 @@ object ThreeColCSVNorm {
 
     for (line <- inFileContent) {
       val elems = line.split(",") // .map( _.trim )
+      // println(s"$line $elems")
       // consoleWriter.println(line)
 
       val filename = elems(0).trim
@@ -70,28 +74,44 @@ object ThreeColCSVNorm {
       //   .dropRight(1)
       //   .mkString(",") // don't get filename and DCT or prediction at the end
 
-      val rawDCT = elems(1)
+      val rawDCT = elems(1).filterNot(quotes).trim
 
       val documentCreationTime = rawDCT match {
         case rawDCT: String if nonseparatedDCT(rawDCT) => {
+          // if (filename contains "patient114") {
+          // println("nonseparated DCT")
+          // println(rawDCT)
+          // println(filename)
+          // }
           val year = rawDCT.slice(0, 4)
           val month = rawDCT.slice(4, 6)
           val date = rawDCT.slice(6, rawDCT.length)
-          TimeSpan.of(year.toInt, month.toInt, date.toInt)
+          val result = TimeSpan.of(year.toInt, month.toInt, date.toInt)
+          // println(result.timeMLValue)
+          result
         }
         case rawDCT: String if separatedDCT(rawDCT) => {
+          // if (filename contains "patient114") {
+          // println("separated DCT")
+          // println(rawDCT)
+          // println(filename)
+          // }
           val dctElems = rawDCT.split("-")
           val year = dctElems(2)
           val month = dctElems(0)
           val date = dctElems(1)
+          val result = TimeSpan.of(year.toInt, month.toInt, date.toInt)
+          // println(result.timeMLValue)
+          result
 
-          TimeSpan.of(year.toInt, month.toInt, date.toInt)
         }
         case _ => {
-          consoleWriter.println(
+          println(
             s"MALFORMED DCT $rawDCT at $filename, parsing filename for DCT"
           )
-          getDCT(filename, consoleWriter)
+          val result = getDCT(filename, consoleWriter)
+          println(result.timeMLValue)
+          result
         }
       }
 
@@ -147,7 +167,18 @@ object ThreeColCSVNorm {
       return finalDate
     }
 
-    parser.parse(timex, DCT) match {
+    // cases like 12-Apr
+    val dateMonthAbbrevElements = timex.split("-")
+    val finalTimex = if (
+      dateMonthAbbrevElements.length == 2 && dateMonthAbbrevElements(0).forall(Character.isDigit) && dateMonthAbbrevElements(1).length == 3
+    ) {
+      dateMonthAbbrevElements(1).toString + "-" + dateMonthAbbrevElements(0).toString // term rewriting ftw
+    } else {
+      timex
+    }
+    // to Apr-12 which Timenorm can parse for instead for some reason
+
+    parser.parse(finalTimex, DCT) match {
       case Success(temporal) =>
         val finalValue = temporal.timeMLValue
         // consoleWriter.println(s"Timenorm parsed $finalValue")
