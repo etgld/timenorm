@@ -134,6 +134,22 @@ def test_repeating_field():
     assert (interval - day31).isoformat() == "2000-01-31T00:00:00 2000-02-01T00:00:00"
 
 
+def test_every_nth():
+    interval = scate.Interval.of(2000, 1, 1)
+    second_day = scate.EveryNth(scate.Repeating(scate.DAY), 2)
+    assert (interval - second_day).isoformat() == "1999-12-30T00:00:00 1999-12-31T00:00:00"
+    assert (interval - second_day - second_day).isoformat() == "1999-12-28T00:00:00 1999-12-29T00:00:00"
+    assert (interval + second_day).isoformat() == "2000-01-03T00:00:00 2000-01-04T00:00:00"
+    assert (interval + second_day + second_day).isoformat() == "2000-01-05T00:00:00 2000-01-06T00:00:00"
+
+    # 28 Dec is a Tuesday
+    third_tue = scate.EveryNth(scate.Repeating(scate.DAY, scate.WEEK, value=1), 3)
+    assert (interval - third_tue).isoformat() == "1999-12-14T00:00:00 1999-12-15T00:00:00"
+    assert (interval - third_tue - third_tue).isoformat() == "1999-11-23T00:00:00 1999-11-24T00:00:00"
+    assert (interval + third_tue).isoformat() == "2000-01-18T00:00:00 2000-01-19T00:00:00"
+    assert (interval + third_tue + third_tue).isoformat() == "2000-02-08T00:00:00 2000-02-09T00:00:00"
+
+
 def test_seasons():
     interval = scate.Interval.fromisoformat("2002-03-22T11:30:30 2003-05-10T22:10:20")
     assert (interval + scate.Spring()).isoformat() == "2004-03-01T00:00:00 2004-06-01T00:00:00"
@@ -152,12 +168,16 @@ def test_day_parts():
     assert (interval - scate.Morning()).isoformat() == "2002-03-21T06:00:00 2002-03-21T12:00:00"
     assert (interval + scate.Afternoon()).isoformat() == "2003-05-11T12:00:00 2003-05-11T18:00:00"
     assert (interval - scate.Afternoon()).isoformat() == "2002-03-21T12:00:00 2002-03-21T18:00:00"
+    assert (interval + scate.Day()).isoformat() == "2003-05-11T06:00:00 2003-05-11T18:00:00"
+    assert (interval - scate.Day()).isoformat() == "2002-03-21T06:00:00 2002-03-21T18:00:00"
     assert (interval + scate.Noon()).isoformat() == "2003-05-11T12:00:00 2003-05-11T12:01:00"
     assert (interval - scate.Noon()).isoformat() == "2002-03-21T12:00:00 2002-03-21T12:01:00"
     assert (interval + scate.Evening()).isoformat() == "2003-05-11T18:00:00 2003-05-12T00:00:00"
     assert (interval - scate.Evening()).isoformat() == "2002-03-21T18:00:00 2002-03-22T00:00:00"
     assert (interval + scate.Night()).isoformat() == "2003-05-11T00:00:00 2003-05-11T06:00:00"
     assert (interval - scate.Night()).isoformat() == "2002-03-22T00:00:00 2002-03-22T06:00:00"
+    assert (interval + scate.Midnight()).isoformat() == "2003-05-11T00:00:00 2003-05-11T00:01:00"
+    assert (interval - scate.Midnight()).isoformat() == "2002-03-22T00:00:00 2002-03-22T00:01:00"
 
 
 def test_week_parts():
@@ -616,6 +636,43 @@ def test_these():
     # These(Thu 10 Apr until Thu 17 Apr, day) => ... 7 days ...
     day = scate.Repeating(scate.DAY)
     assert len(list(scate.These(interval_week_thu, day))) == 7
+
+
+def test_repr():
+    for obj in [
+            scate.Repeating(scate.DAY),
+            scate.Interval.of(2022, 8, 13),
+            scate.Interval.fromisoformat("1111-11-11T11:11:11 1212-12-12T12:12:12"),
+            scate.Year(1314),
+            scate.Next(scate.Interval.of(1998, 7, 13), scate.Repeating(scate.DAY, scate.MONTH, value=13)),
+            scate.Between(scate.Year(1000), scate.Interval.of(2000, 10, 5)),
+            scate.Summer(),
+            scate.LastN(scate.Interval.of(1907, 3), scate.Period(scate.QUARTER_YEAR, 3), n=2)
+    ]:
+        assert obj == eval(repr(obj), vars(scate))
+
+
+def test_flatten():
+    for obj, obj_flat in [
+        (scate.Interval.of(2022, 8, 13),
+         scate.Interval.of(2022, 8, 13)),
+        (scate.This(scate.Year(1887), scate.RepeatingIntersection([
+            scate.Repeating(scate.MONTH, scate.YEAR, value=7),
+            scate.RepeatingIntersection([
+                scate.RepeatingIntersection([
+                    scate.Repeating(scate.DAY, scate.MONTH, value=7),
+                    scate.Repeating(scate.HOUR, scate.DAY, value=7),
+                ]),
+                scate.Repeating(scate.MINUTE, scate.HOUR, value=7),
+            ])])),
+         scate.This(scate.Year(1887), scate.RepeatingIntersection([
+            scate.Repeating(scate.MONTH, scate.YEAR, value=7),
+            scate.Repeating(scate.DAY, scate.MONTH, value=7),
+            scate.Repeating(scate.HOUR, scate.DAY, value=7),
+            scate.Repeating(scate.MINUTE, scate.HOUR, value=7),
+         ]))),
+    ]:
+        assert scate.flatten(obj) == obj_flat
 
 
 def test_none_values():

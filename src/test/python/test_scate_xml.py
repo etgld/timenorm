@@ -28,6 +28,8 @@ def test_period_calendar_interval():
              scate.Period(scate.QUARTER_YEAR, 59, span=(45, 52))),
             ("Period", "Years", '160@e@sample-3-982-540-2@gold',
              scate.Period(scate.YEAR, 59, span=(45, 52))),
+            ("Period", "Centuries", '160@e@sample-3-982-540-2@gold',
+             scate.Period(scate.CENTURY, 59, span=(45, 52))),
             ("Period", "Unknown", '160@e@sample-3-982-540-2@gold',
              scate.Period(None, 59, span=(45, 52))),
             ("Period", "Years", '',
@@ -187,6 +189,7 @@ def test_special_repeating():
             ("Part-Of-Day", "Morning", scate.Morning),
             ("Part-Of-Day", "Noon", scate.Noon),
             ("Part-Of-Day", "Afternoon", scate.Afternoon),
+            ("Part-Of-Day", "Day", scate.Day),
             ("Part-Of-Day", "Evening", scate.Evening),
             ("Part-Of-Day", "Night", scate.Night)]:
         xml_str = inspect.cleandoc(f"""
@@ -237,9 +240,10 @@ def test_year():
 
 
 def test_two_digit_year():
-    for value, iso in [
-            ("84", "1984-01-01T00:00:00 1985-01-01T00:00:00"),
-            ("19", "1919-01-01T00:00:00 1920-01-01T00:00:00")]:
+    for value, last_digits, n_suffix_digits, n_missing_digits, iso in [
+            ("84", 84, 2, 0, "1984-01-01T00:00:00 1985-01-01T00:00:00"),
+            ("19", 19, 2, 0, "1919-01-01T00:00:00 1920-01-01T00:00:00"),
+            ("9?", 9, 1, 1, "1990-01-01T00:00:00 2000-01-01T00:00:00")]:
         xml_str = inspect.cleandoc(f"""
             <data>
                 <annotations>
@@ -257,7 +261,7 @@ def test_two_digit_year():
                 </annotations>
             </data>""")
         doc_time = scate.Interval.of(1928, 2, 13)
-        obj = scate.YearSuffix(doc_time, last_digits=int(value), n_suffix_digits=2, span=(1704, 1706))
+        obj = scate.YearSuffix(doc_time, last_digits, n_suffix_digits, n_missing_digits, span=(1704, 1706))
         objects = scate.from_xml(ET.fromstring(xml_str), known_intervals={(None, None): doc_time})
         assert objects == [obj]
         assert _isoformats(objects) == [iso]
@@ -1432,3 +1436,39 @@ def test_20th_century():
     objects = scate.from_xml(ET.fromstring(xml_str), known_intervals={(None, None): doc_time})
     assert objects == [nth]
     assert _isoformats(objects) == ["1900-01-01T00:00:00 2000-01-01T00:00:00"]
+
+
+def test_every_other_day():
+    # ID176_clinic_416 (6149, 6154) Every-other-day
+    xml_str = inspect.cleandoc("""
+        <data>
+            <annotations>
+                <entity>
+                    <id>729@e@ID176_clinic_416@gold</id>
+                    <span>6149,6154</span>
+                    <type>Every-Nth</type>
+                    <parentsType>Operator</parentsType>
+                    <properties>
+                        <Value>2</Value>
+                        <Repeating-Interval>730@e@ID176_clinic_416@gold</Repeating-Interval>
+                    </properties>
+                </entity>
+                <entity>
+                    <id>730@e@ID176_clinic_416@gold</id>
+                    <span>6155,6158</span>
+                    <type>Calendar-Interval</type>
+                    <parentsType>Repeating-Interval</parentsType>
+                    <properties>
+                        <Type>Day</Type>
+                        <Number></Number>
+                        <Modifier></Modifier>
+                    </properties>
+                </entity>
+            </annotations>
+        </data>""")
+    doc_time = scate.Interval.of(2010, 8, 5)
+    day = scate.Repeating(scate.DAY, span=(6155, 6158))
+    every_other_day = scate.EveryNth(day, 2, span=(6149, 6158))
+    objects = scate.from_xml(ET.fromstring(xml_str), known_intervals={(None, None): doc_time})
+    assert objects == [every_other_day]
+    assert _isoformats(objects) == [None]

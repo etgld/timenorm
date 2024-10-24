@@ -1,13 +1,35 @@
 import abc
+import argparse
 import collections
 import dataclasses
 import datetime
+import sys
+
 import dateutil.relativedelta
 import dateutil.rrule
 import enum
+import pathlib
 import re
+import sys
+import traceback
 import typing
 import xml.etree.ElementTree as ET
+
+
+def _dataclass(cls):
+    cls = dataclasses.dataclass(cls, repr=False)
+
+    def __repr__(self):
+        fields = [f for f in dataclasses.fields(self)
+                  if f.repr
+                  and getattr(self, f.name) != f.default
+                  and (f.default_factory is dataclasses.MISSING
+                       or getattr(self, f.name) != f.default_factory())]
+        field_str = ', '.join([f"{f.name}={getattr(self, f.name)!r}" for f in fields])
+        return f"{self.__class__.__qualname__}({field_str})"
+
+    cls.__repr__ = __repr__
+    return cls
 
 
 @dataclasses.dataclass
@@ -22,6 +44,27 @@ class Interval:
         start_str = "..." if self.start is None else self.start.isoformat()
         end_str = "..." if self.end is None else self.end.isoformat()
         return f"{start_str} {end_str}"
+
+    def __repr__(self):
+        delta = dateutil.relativedelta.relativedelta(self.end, self.start)
+        if delta == dateutil.relativedelta.relativedelta(years=+1):
+            tuple_index = 1
+        elif delta == dateutil.relativedelta.relativedelta(months=+1):
+            tuple_index = 2
+        elif delta == dateutil.relativedelta.relativedelta(days=+1):
+            tuple_index = 3
+        elif delta == dateutil.relativedelta.relativedelta(hours=+1):
+            tuple_index = 4
+        elif delta == dateutil.relativedelta.relativedelta(minutes=+1):
+            tuple_index = 5
+        elif delta == dateutil.relativedelta.relativedelta(seconds=+1):
+            tuple_index = 6
+        else:
+            tuple_index = None
+        if tuple_index is not None:
+            return f"Interval.of({', '.join(map(repr, self.start.timetuple()[:tuple_index]))})"
+        else:
+            return f"Interval(start={self.start!r}, end={self.end!r})"
 
     def __len__(self):
         return 2
@@ -84,6 +127,9 @@ class Unit(enum.Enum):
         if self.__class__ is other.__class__:
             return self._n < other._n
         return NotImplemented
+
+    def __repr__(self):
+        return self.name
 
     def truncate(self, dt: datetime.datetime) -> datetime.datetime:
         if self is Unit.MILLISECOND:
@@ -169,11 +215,11 @@ class Offset:
         raise NotImplementedError
 
 
-@dataclasses.dataclass
+@_dataclass
 class Period(Offset):
     unit: Unit
     n: int | None
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __radd__(self, other: datetime.datetime) -> Interval:
         if self.unit is None or self.n is None:
@@ -198,10 +244,10 @@ class Period(Offset):
             return self.unit.expand(interval, self.n)
 
 
-@dataclasses.dataclass
+@_dataclass
 class PeriodSum(Offset):
     periods: list[Period]
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         self.unit = max(self.periods, key=lambda p: p.unit).unit
@@ -219,21 +265,23 @@ class PeriodSum(Offset):
         return Interval(start, other)
 
 
-@dataclasses.dataclass
+@_dataclass
 class Repeating(Offset):
     unit: Unit
     range: Unit = None
     value: int = dataclasses.field(default=None, kw_only=True)
     n_units: int = dataclasses.field(default=1, kw_only=True)
-    rrule_kwargs: dict = dataclasses.field(default_factory=dict, kw_only=True)
-    span: (int, int) = None
+    rrule_kwargs: dict = dataclasses.field(default_factory=dict, kw_only=True, repr=False)
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         self.period = Period(self.unit, self.n_units)
-        if self.range is None:
+        if self.range == self.unit:
+            pass  # same as self.range is None
+        elif self.range is None:
             self.range = self.unit
         elif self.value is None:
-            raise ValueError(f"value=None is not allowed for range={self.range}")
+            raise ValueError(f"value=None is not allowed for unit={self.unit} and range={self.range}")
         else:
             match self.range:
                 case Unit.SECOND:
@@ -304,7 +352,7 @@ class Repeating(Offset):
 
 # Defined as "meterological seasons"
 # https://www.ncei.noaa.gov/news/meteorological-versus-astronomical-seasons
-@dataclasses.dataclass
+@_dataclass
 class Spring(Repeating):
     unit: Unit = Unit.MONTH
     range: Unit = Unit.YEAR
@@ -312,7 +360,7 @@ class Spring(Repeating):
     n_units: int = 3
 
 
-@dataclasses.dataclass
+@_dataclass
 class Summer(Repeating):
     unit: Unit = Unit.MONTH
     range: Unit = Unit.YEAR
@@ -320,7 +368,7 @@ class Summer(Repeating):
     n_units: int = 3
 
 
-@dataclasses.dataclass
+@_dataclass
 class Fall(Repeating):
     unit: Unit = Unit.MONTH
     range: Unit = Unit.YEAR
@@ -328,7 +376,7 @@ class Fall(Repeating):
     n_units: int = 3
 
 
-@dataclasses.dataclass
+@_dataclass
 class Winter(Repeating):
     unit: Unit = Unit.MONTH
     range: Unit = Unit.YEAR
@@ -336,7 +384,7 @@ class Winter(Repeating):
     n_units: int = 3
 
 
-@dataclasses.dataclass
+@_dataclass
 class Weekend(Repeating):
     unit: Unit = Unit.DAY
     n_units: int = 2
@@ -346,7 +394,7 @@ class Weekend(Repeating):
 
 # defined as used in forecasts
 # https://www.weather.gov/bgm/forecast_terms
-@dataclasses.dataclass
+@_dataclass
 class Morning(Repeating):
     unit: Unit = Unit.HOUR
     range: Unit = Unit.DAY
@@ -354,14 +402,14 @@ class Morning(Repeating):
     n_units: int = 6
 
 
-@dataclasses.dataclass
+@_dataclass
 class Noon(Repeating):
     unit: Unit = Unit.MINUTE
     rrule_kwargs: dict = dataclasses.field(
         default_factory=lambda: dict(freq=dateutil.rrule.DAILY, byhour=12, byminute=0))
 
 
-@dataclasses.dataclass
+@_dataclass
 class Afternoon(Repeating):
     unit: Unit = Unit.HOUR
     range: Unit = Unit.DAY
@@ -369,7 +417,15 @@ class Afternoon(Repeating):
     n_units: int = 6
 
 
-@dataclasses.dataclass
+@_dataclass
+class Day(Repeating):
+    unit: Unit = Unit.HOUR
+    range: Unit = Unit.DAY
+    value: int = 6
+    n_units: int = 12
+
+
+@_dataclass
 class Evening(Repeating):
     unit: Unit = Unit.HOUR
     range: Unit = Unit.DAY
@@ -377,7 +433,7 @@ class Evening(Repeating):
     n_units: int = 6
 
 
-@dataclasses.dataclass
+@_dataclass
 class Night(Repeating):
     unit: Unit = Unit.HOUR
     range: Unit = Unit.DAY
@@ -385,10 +441,36 @@ class Night(Repeating):
     n_units: int = 6
 
 
-@dataclasses.dataclass
+@_dataclass
+class Midnight(Repeating):
+    unit: Unit = Unit.MINUTE
+    rrule_kwargs: dict = dataclasses.field(
+        default_factory=lambda: dict(freq=dateutil.rrule.DAILY, byhour=0, byminute=0))
+
+
+@_dataclass
+class EveryNth(Offset):
+    offset: Offset
+    n: int
+    span: (int, int) = dataclasses.field(default=None, repr=False)
+
+    def __rsub__(self, other: datetime.datetime) -> Interval:
+        interval = other - self.offset
+        for _ in range(self.n - 1):
+            interval -= self.offset
+        return interval
+
+    def __radd__(self, other: datetime.datetime) -> Interval:
+        interval = other + self.offset
+        for _ in range(self.n - 1):
+            interval += self.offset
+        return interval
+
+
+@_dataclass
 class OffsetUnion(Offset):
     offsets: typing.Iterable[Offset]
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         self.unit = min(o.unit for o in self.offsets)
@@ -403,10 +485,10 @@ class OffsetUnion(Offset):
                    key=lambda i: (i.start, i.start - i.end))
 
 
-@dataclasses.dataclass
+@_dataclass
 class RepeatingIntersection(Offset):
     offsets: typing.Iterable[Repeating]
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def _iter_offsets(self) -> typing.Iterator[Repeating]:
         for offset in self.offsets:
@@ -488,13 +570,13 @@ class RepeatingIntersection(Offset):
         return start + self.min_period
 
 
-@dataclasses.dataclass
+@_dataclass
 class Year(Interval):
     digits: int
     n_missing_digits: int = 0
-    start: datetime.datetime = dataclasses.field(init=False)
-    end: datetime.datetime = dataclasses.field(init=False)
-    span: (int, int) = None
+    start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    end: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         duration_in_years = 10 ** self.n_missing_digits
@@ -502,15 +584,15 @@ class Year(Interval):
         self.end = self.start + dateutil.relativedelta.relativedelta(years=duration_in_years)
 
 
-@dataclasses.dataclass
+@_dataclass
 class YearSuffix(Interval):
     interval: Interval
     last_digits: int
     n_suffix_digits: int
     n_missing_digits: int = 0
-    start: datetime.datetime = dataclasses.field(init=False)
-    end: datetime.datetime = dataclasses.field(init=False)
-    span: (int, int) = None
+    start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    end: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         divider = 10 ** (self.n_suffix_digits + self.n_missing_digits)
@@ -519,18 +601,18 @@ class YearSuffix(Interval):
         self.start, self.end = Year(digits, self.n_missing_digits)
 
 
-@dataclasses.dataclass
+@_dataclass
 class IntervalOp(Interval):
     interval: Interval
     offset: Offset
-    start: datetime.datetime | None = dataclasses.field(init=False)
-    end: datetime.datetime | None = dataclasses.field(init=False)
+    start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    end: datetime.datetime | None = dataclasses.field(init=False, repr=False)
 
 
-@dataclasses.dataclass
+@_dataclass
 class Last(IntervalOp):
     interval_included: bool = False
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if not self.interval.is_defined():
@@ -544,10 +626,10 @@ class Last(IntervalOp):
             self.start, self.end = start - self.offset
 
 
-@dataclasses.dataclass
+@_dataclass
 class Next(IntervalOp):
     interval_included: bool = False
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if not self.interval.is_defined():
@@ -567,11 +649,11 @@ class Next(IntervalOp):
             self.start, self.end = end + self.offset
 
 
-@dataclasses.dataclass
+@_dataclass
 class Before(IntervalOp):
     n: int = 1
     interval_included: bool = False
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if not self.interval.is_defined():
@@ -596,11 +678,11 @@ class Before(IntervalOp):
             raise NotImplementedError
 
 
-@dataclasses.dataclass
+@_dataclass
 class After(IntervalOp):
     n: int = 1
     interval_included: bool = False
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if not self.interval.is_defined():
@@ -627,11 +709,11 @@ class After(IntervalOp):
             raise NotImplementedError
 
 
-@dataclasses.dataclass
+@_dataclass
 class Nth(IntervalOp):
     index: int
     from_end: bool = False
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if self.offset is None or (self.from_end and self.interval.end is None) \
@@ -652,13 +734,13 @@ class Nth(IntervalOp):
                 raise ValueError(f"{self.isoformat()} is not within {self.interval.isoformat()}:\n{self}")
 
 
-@dataclasses.dataclass
-class This(Interval):
+@_dataclass
+class This(IntervalOp):
     interval: Interval
     offset: Offset
-    start: datetime.datetime | None = dataclasses.field(init=False)
-    end: datetime.datetime | None = dataclasses.field(init=False)
-    span: (int, int) = None
+    start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    end: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if not self.interval.is_defined() or self.offset is None:
@@ -678,15 +760,15 @@ class This(Interval):
             raise NotImplementedError
 
 
-@dataclasses.dataclass
+@_dataclass
 class Between(Interval):
     start_interval: Interval
     end_interval: Interval
     start_included: bool = False
     end_included: bool = False
-    start: datetime.datetime | None = dataclasses.field(init=False)
-    end: datetime.datetime | None = dataclasses.field(init=False)
-    span: (int, int) = None
+    start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    end: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if not self.start_interval.is_defined() or not self.end_interval.is_defined():
@@ -701,12 +783,12 @@ class Between(Interval):
                 raise ValueError(f"{start_iso} is not before {end_iso}:\n{self}")
 
 
-@dataclasses.dataclass
+@_dataclass
 class Intersection(Interval):
     intervals: typing.Iterable[Interval]
-    start: datetime.datetime | None = dataclasses.field(init=False)
-    end: datetime.datetime | None = dataclasses.field(init=False)
-    span: (int, int) = None
+    start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    end: datetime.datetime | None = dataclasses.field(init=False, repr=False)
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if any(i.start is None and i.end is None for i in self.intervals):
@@ -724,7 +806,7 @@ class Intervals(collections.abc.Iterable[Interval], abc.ABC):
             yield interval.isoformat()
 
 
-@dataclasses.dataclass
+@_dataclass
 class _N(Intervals):
     interval: Interval
     offset: Offset
@@ -748,32 +830,32 @@ class _N(Intervals):
                 interval_included = False
 
 
-@dataclasses.dataclass
+@_dataclass
 class LastN(_N):
     base_class: type = Last
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def _adjust_for_n_none(self, interval: Interval):
         interval.start = None
 
 
-@dataclasses.dataclass
+@_dataclass
 class NextN(_N):
     base_class: type = Next
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def _adjust_for_n_none(self, interval: Interval):
         interval.end = None
 
 
-@dataclasses.dataclass
+@_dataclass
 class NthN(Intervals):
     interval: Interval
     offset: Offset
     index: int
     n: int
     from_end: bool = False
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __iter__(self) -> typing.Iterator[Interval]:
         n = 2 if self.n is None else self.n
@@ -788,11 +870,11 @@ class NthN(Intervals):
             yield interval
 
 
-@dataclasses.dataclass
+@_dataclass
 class These(Intervals):
     interval: Interval
     offset: Offset
-    span: (int, int) = None
+    span: (int, int) = dataclasses.field(default=None, repr=False)
 
     def __post_init__(self):
         if not self.interval.is_defined() or self.offset is None:
@@ -832,16 +914,16 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
     if known_intervals is None:
         known_intervals = {}
 
-    @dataclasses.dataclass
+    @_dataclass
     class Number:
         value: int | float
         offset: Offset = None
-        span: (int, int) = None
+        span: (int, int) = dataclasses.field(default=None, repr=False)
 
-    @dataclasses.dataclass
+    @_dataclass
     class AMPM:
         value: str
-        span: (int, int) = None
+        span: (int, int) = dataclasses.field(default=None, repr=False)
 
     id_to_entity = {}
     id_to_children = {}
@@ -882,6 +964,12 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
         prop_type = entity.findtext("properties/Type")
         prop_number = entity.findtext("properties/Number")
         spans = []
+
+        # TODO: revisit whether discontinuous spans need to be retained
+        char_offsets = {int(x)
+                        for start_end in entity.findtext("span").split(";")
+                        for x in start_end.split(",")}
+        trigger_span = (min(char_offsets), max(char_offsets))
 
         # helper for managing access to id_to_obj
         def pop(obj_id: str) -> Interval | Offset | Period | Repeating | Number | AMPM:
@@ -935,17 +1023,15 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
 
         # create objects from <entity> elements
         try:
-            # TODO: revisit whether discontinuous spans need to be retained
-            char_offsets = {int(x)
-                            for start_end in entity.findtext("span").split(";")
-                            for x in start_end.split(",")}
-            trigger_span = (min(char_offsets), max(char_offsets))
             match entity_type:
                 case "Period":
                     if prop_type == "Unknown":
                         unit = None
                     else:
-                        unit_name = prop_type.upper()[:-1].replace("-", "_")
+                        unit_name = prop_type.upper()
+                        unit_name = re.sub(r"IES$", r"Y", unit_name)
+                        unit_name = re.sub(r"S$", r"", unit_name)
+                        unit_name = re.sub("-", "_", unit_name)
                         unit = Unit.__members__[unit_name]
                     if prop_number:
                         n = pop(prop_number).value
@@ -954,9 +1040,19 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
                     obj = Period(unit, n)
                 case "Sum":
                     obj = PeriodSum(pop_all_prop("Periods"))
-                case "Year":
-                    digits = prop_value.rstrip('?')
-                    obj = Year(int(digits), len(prop_value) - len(digits))
+                case "Year" | "Two-Digit-Year":
+                    digits_str = prop_value.rstrip('?')
+                    n_missing_digits = len(prop_value) - len(digits_str)
+                    digits = int(digits_str)
+                    match entity_type:
+                        case "Year":
+                            obj = Year(digits, n_missing_digits)
+                        case "Two-Digit-Year":
+                            n_suffix_digits = 2 - n_missing_digits
+                            obj = YearSuffix(get_interval("Interval"), digits,
+                                             n_suffix_digits, n_missing_digits)
+                        case other:
+                            raise NotImplementedError(other)
                 case "Month-Of-Year":
                     month_int = datetime.datetime.strptime(prop_type, '%B').month
                     obj = Repeating(Unit.MONTH, Unit.YEAR, value=month_int)
@@ -985,7 +1081,8 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
                     obj = Repeating(Unit.MINUTE, Unit.HOUR, value=int(prop_value))
                 case "Second-Of-Minute":
                     obj = Repeating(Unit.SECOND, Unit.MINUTE, value=int(prop_value))
-                case "Part-Of-Day" | "Season-Of-Year" if prop_type == "Unknown":
+                case "Part-Of-Day" | "Season-Of-Year" if prop_type in {"Unknown", "Dawn", "Dusk"}:
+                    # TODO: improve handling of location-dependent times
                     obj = Repeating(None)
                 case "Part-Of-Day" | "Part-Of-Week" | "Season-Of-Year":
                     obj = globals()[prop_type]()
@@ -994,6 +1091,8 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
                     obj = Repeating(Unit.__members__[unit_name])
                 case "Union":
                     obj = OffsetUnion(pop_all_prop("Repeating-Intervals"))
+                case "Every-Nth":
+                    obj = EveryNth(get_offset(), int(prop_value))
                 case "Last" | "Next" | "Before" | "After" | "NthFromEnd" | "NthFromStart":
                     cls_name = "Nth" if entity_type.startswith("Nth") else entity_type
                     interval = get_interval("Interval")
@@ -1011,8 +1110,6 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
                             cls_name += "N"
                         offset = offset.offset
                     obj = globals()[cls_name](interval=interval, offset=offset, **kwargs)
-                case "Two-Digit-Year":
-                    obj = YearSuffix(get_interval("Interval"), int(prop_value), 2)
                 case "This":
                     obj = This(get_interval("Interval"), get_offset())
                 case "Between":
@@ -1048,7 +1145,7 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
                     obj = known_intervals.get(trigger_span)
                     if obj is None:
                         obj = Interval(None, None)
-                case "Time-Zone" | "Modifier" | "Frequency" | "NotNormalizable":
+                case "Time-Zone" | "Modifier" | "Frequency" | "NotNormalizable" | "PreAnnotation":
                     # TODO: handle time zones, modifiers, and frequencies
                     continue
                 case other:
@@ -1092,8 +1189,7 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
             obj.span = (min(start for start, _ in spans), max(end for _, end in spans))
 
         except Exception as e:
-            xml = re.sub(r"\s+", "", ET.tostring(entity, encoding="unicode"))
-            raise ValueError(f"triggered by {xml}") from e
+            raise AnaforaXMLParsingError(entity, trigger_span) from e
 
         # add the object to the mapping
         id_to_obj[entity_id] = obj
@@ -1104,3 +1200,84 @@ def from_xml(elem: ET.Element, known_intervals: dict[(int, int), Interval] = Non
             del id_to_obj[key]
 
     return list(id_to_obj.values())
+
+
+class AnaforaXMLParsingError(RuntimeError):
+    def __init__(self, entity: ET.Element, trigger_span: (int, int)):
+        self.entity = entity
+        self.trigger_span = trigger_span
+        super().__init__(re.sub(r"\s+", "", ET.tostring(entity, encoding="unicode")))
+
+
+def flatten(offset_or_interval: Offset | Interval) -> Offset | Interval:
+    match offset_or_interval:
+        case IntervalOp() as io:
+            return dataclasses.replace(io, offset=flatten(io.offset))
+        case RepeatingIntersection() as ri if any(isinstance(o, RepeatingIntersection) for o in ri.offsets):
+            offsets = []
+            for offset in ri.offsets:
+                offset = flatten(offset)
+                if isinstance(offset, RepeatingIntersection):
+                    offsets.extend(offset.offsets)
+                else:
+                    offsets.append(offset)
+            return dataclasses.replace(ri, offsets=offsets)
+        case _:
+            return offset_or_interval
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("xml_dir")
+    parser.add_argument("--xml-suffix", default=".TimeNorm.gold.completed.xml")
+    parser.add_argument("--text-dir")
+    parser.add_argument("--dct-dir")
+    parser.add_argument("--silent", action="store_true")
+    parser.add_argument("--flatten", action="store_true")
+    args = parser.parse_args()
+
+    n_errors = 0
+
+    # iterate over the selected Anafora XML paths
+    xml_paths = list(pathlib.Path(args.xml_dir).glob(f"**/*{args.xml_suffix}"))
+    if not xml_paths:
+        parser.exit(message=f"no such paths: {args.xml_dir}/**/*.{args.xml_suffix}\n")
+    for xml_path in xml_paths:
+
+        # load the document creation time, if provided
+        if args.dct_dir is not None:
+            dct_name = xml_path.name.replace(args.xml_suffix, ".dct")
+            dct_path = pathlib.Path(args.dct_dir) / dct_name
+            with open(dct_path) as dct_file:
+                [year_str, month_str, day_str] = dct_file.read().strip().split("-")
+                doc_time = Interval.of(int(year_str), int(month_str), int(day_str))
+
+        # use today for the document creation time, if not provided
+        else:
+            today = datetime.date.today()
+            doc_time = Interval.of(today.year, today.month, today.day)
+
+        # parse the Anafora XML into Intervals, Offsets, etc.
+        elem = ET.parse(xml_path).getroot()
+        try:
+            for obj in from_xml(elem, known_intervals={(None, None): doc_time}):
+                if args.flatten:
+                    obj = flatten(obj)
+                if not args.silent:
+                    print(obj)
+        except AnaforaXMLParsingError as e:
+            text_name = xml_path.name.replace(args.xml_suffix, "")
+            text_dir = pathlib.Path(args.text_dir) if args.text_dir else xml_path.parent
+            with open(text_dir / text_name) as text_file:
+                text = text_file.read()
+
+            start, end = e.trigger_span
+            pre_text = text[max(0, start - 100):start]
+            post_text = text[end:min(len(text), end + 100)]
+            traceback.print_exception(e.__cause__)
+            msg = f"\nContext:\n{pre_text}[[{text[start:end]}]]{post_text}\nXML:\n{e}\nFile:\n{xml_path}\n"
+            print(msg, file=sys.stderr)
+            n_errors += 1
+
+    if n_errors:
+        print(f"Errors: {n_errors}", file=sys.stderr)
