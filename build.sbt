@@ -2,8 +2,9 @@ organization := "org.clulab"
 name := "timenorm"
 version := "1.0.5"
 
-scalaVersion := "2.12.8"
-crossScalaVersions := List("2.11.12", "2.12.8", "2.13.0")
+scalaVersion := "3.5.0"
+// scalaVersion := "2.12.8"
+// crossScalaVersions := List("2.11.12", "2.12.8", "2.13.0")
 scalacOptions := Seq("-unchecked") // , "-deprecation") // Check Scala 2.13 periodically.
 
 libraryDependencies ++= {
@@ -13,9 +14,9 @@ libraryDependencies ++= {
     "org.tensorflow"             % "tensorflow"      % "1.12.0",
     "org.clulab"                 % "timenorm-models" % "0.9.2",
     "commons-io"                 % "commons-io"      % "2.6",
-    "org.scala-lang.modules"    %% "scala-xml"       % "1.2.0",
-    "com.typesafe.play"         %% "play-json"       % "2.7.4",
-    "org.scalatest"             %% "scalatest"       % "3.0.8" % Test,
+    "org.scala-lang.modules"    %% "scala-xml"       % "2.3.0",
+    "com.typesafe.play"         %% "play-json"       % "2.10.6",
+    "org.scalatest"             %% "scalatest"       % "3.2.19" % Test,
     "com.lexicalscope.jewelcli"  % "jewelcli"        % "0.8.9" % Test,
     "org.timen"                  % "timen"           % "1.0.8" % Test,
   )
