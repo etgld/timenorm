@@ -5,11 +5,11 @@ import inspect
 import xml.etree.ElementTree as ET
 
 
-def _isoformats(objects: list[scate.Interval | scate.Offset]):
+def _isoformats(objects: list[scate.Interval | scate.Shift]):
     result = []
     for o in objects:
         match o:
-            case scate.Offset():
+            case scate.Shift():
                 result.append(None)
             case scate.Interval():
                 result.append(o.isoformat())
@@ -240,10 +240,10 @@ def test_year():
 
 
 def test_two_digit_year():
-    for value, last_digits, n_suffix_digits, n_missing_digits, iso in [
-            ("84", 84, 2, 0, "1984-01-01T00:00:00 1985-01-01T00:00:00"),
-            ("19", 19, 2, 0, "1919-01-01T00:00:00 1920-01-01T00:00:00"),
-            ("9?", 9, 1, 1, "1990-01-01T00:00:00 2000-01-01T00:00:00")]:
+    for value, digits, n_missing_digits, iso in [
+            ("84", 84, 0, "1984-01-01T00:00:00 1985-01-01T00:00:00"),
+            ("19", 19, 0, "1919-01-01T00:00:00 1920-01-01T00:00:00"),
+            ("9?", 9, 1, "1990-01-01T00:00:00 2000-01-01T00:00:00")]:
         xml_str = inspect.cleandoc(f"""
             <data>
                 <annotations>
@@ -261,7 +261,7 @@ def test_two_digit_year():
                 </annotations>
             </data>""")
         doc_time = scate.Interval.of(1928, 2, 13)
-        obj = scate.YearSuffix(doc_time, last_digits, n_suffix_digits, n_missing_digits, span=(1704, 1706))
+        obj = scate.YearSuffix(doc_time, digits, n_missing_digits, span=(1704, 1706))
         objects = scate.from_xml(ET.fromstring(xml_str), known_intervals={(None, None): doc_time})
         assert objects == [obj]
         assert _isoformats(objects) == [iso]
@@ -373,7 +373,7 @@ def test_nth_operators():
 def test_n_operators():
     y2024 = scate.Year(2024, span=(20, 25))
     mon = scate.Repeating(scate.DAY, scate.WEEK, value=0, span=(30, 35))
-    kwargs = dict(n=2, interval=y2024, offset=mon, span=(10, 45))
+    kwargs = dict(n=2, interval=y2024, shift=mon, span=(10, 45))
     for xml_type, obj, isos in [
             ("NthFromEnd", scate.NthN(index=3, from_end=True, **kwargs), [[
                 "2024-12-02T00:00:00 2024-12-03T00:00:00",  # 5th from last Monday in 2024
@@ -1094,7 +1094,7 @@ def test_december_17_and_18():
     d17m12 = scate.RepeatingIntersection([m12, d17], span=(0, 11))
     d18 = scate.Repeating(scate.DAY, scate.MONTH, value=18, span=(16, 18))
     d18m12 = scate.RepeatingIntersection([m12, d18], span=(0, 18))
-    union = scate.OffsetUnion([d17m12, d18m12], span=(0, 18))
+    union = scate.ShiftUnion([d17m12, d18m12], span=(0, 18))
     objects = scate.from_xml(ET.fromstring(xml_str))
     assert objects == [union]
     assert _isoformats(objects) == [None]
