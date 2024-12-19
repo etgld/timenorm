@@ -39,9 +39,65 @@ class Interval:
 
         Interval(start=datetime.datetime.fromisoformat("1990-01-01T00:00:00"),
                  end=datetime.datetime.fromisoformat("1991-01-01T00:00:00"))
+
+    See the :func:`fromisoformat` and :func:`of` methods for more concise ways of constructing Intervals.
     """
     start: datetime.datetime | None
     end: datetime.datetime | None
+
+    @classmethod
+    def fromisoformat(cls, string):
+        """
+        Creates an Interval from two dates in ISO 8601 format.
+        For example, "May 1362" may be represented as::
+
+            Interval.fromisoformat("1362-03-01T00:00:00 1362-04-01T00:00:00")
+
+        The supported formats are the same as :func:`datetime.datetime.fromisoformat`, so "May 1362" may be more
+        concisely written as::
+
+            Interval.fromisoformat("1362-03-01 1362-04-01")
+
+        :param string: A string containing a starting point and an ending point in ISO 8601 format.
+        :return: An Interval from the starting point to the ending point.
+        """
+        start, end = [datetime.datetime.fromisoformat(x) for x in string.split()]
+        return cls(start, end)
+
+    @classmethod
+    def of(cls, *args):
+        """
+        Creates an Interval that aligns to exactly one calendar unit.
+        For example, "1990" may be represented as::
+
+            Interval.of(1990)
+
+        And "1 Apr 1918" may be represented as::
+
+            Interval.of(1998, 4, 1)
+
+        :param args: A starting point specified by any prefix of the list of time units:
+        year, month, day, hour, minute, second, and microsecond.
+        :return: An Interval that starts from the given starting point, and ends after the smallest time unit specified.
+        """
+        # match Interval.of arguments with datetime.__init__ arguments
+        names = ["year", "month", "day", "hour", "minute", "second", "microsecond"]
+        if len(args) > len(names):
+            raise ValueError(f"found {len(args)} arguments, {args!r}, for only {len(names)} time units, {names!r}")
+        pairs = list(zip(names, args))
+        kwargs = dict(pairs)
+        # month and day are required by datetime, so give defaults here
+        for name in ["month", "day"]:
+            if name not in kwargs:
+                kwargs[name] = 1
+        # create the datetime for the start
+        start = datetime.datetime(**kwargs)
+        # end is one smallest unit specified larger than the start
+        last_name, _ = pairs[-1]
+        # relativedelta argument names are plural
+        last_name += "s"
+        end = start + dateutil.relativedelta.relativedelta(**{last_name: 1})
+        return cls(start, end)
 
     def is_defined(self) -> bool:
         return self.start is not None and self.end is not None
@@ -70,7 +126,7 @@ class Interval:
         if tuple_index is not None:
             return f"Interval.of({', '.join(map(repr, self.start.timetuple()[:tuple_index]))})"
         else:
-            return f"Interval(start={self.start!r}, end={self.end!r})"
+            return f"Interval.fromisoformat('{self.start.isoformat()} {self.end.isoformat()}')"
 
     def __len__(self):
         return 2
@@ -84,30 +140,6 @@ class Interval:
 
     def __sub__(self, shift):
         return self.start - shift
-
-    @classmethod
-    def fromisoformat(cls, string):
-        start, end = [datetime.datetime.fromisoformat(x) for x in string.split()]
-        return cls(start, end)
-
-    @classmethod
-    def of(cls, year, *args):
-        # match Interval.of arguments with datetime.__init__ arguments
-        names = ["year", "month", "day", "hour", "minute", "second", "microsecond"]
-        pairs = list(zip(names, (year,) + args))
-        kwargs = dict(pairs)
-        # month and day are required by datetime, so give defaults here
-        for name in ["month", "day"]:
-            if name not in kwargs:
-                kwargs[name] = 1
-        # create the datetime for the start
-        start = datetime.datetime(**kwargs)
-        # end is one smallest unit specified larger than the start
-        last_name, _ = pairs[-1]
-        # relativedelta argument names are plural
-        last_name += "s"
-        end = start + dateutil.relativedelta.relativedelta(**{last_name: 1})
-        return cls(start, end)
 
 
 class Unit(enum.Enum):
@@ -255,12 +287,6 @@ class Period(Shift):
             return Interval(None, other)
         else:
             return Interval(other - self.unit.relativedelta(self.n), other)
-
-    def expand(self, interval: Interval) -> Interval:
-        if self.unit is None or self.n is None:
-            return Interval(None, None)
-        else:
-            return self.unit.expand(interval, self.n)
 
 
 @_dataclass
@@ -718,7 +744,10 @@ class YearSuffix(Interval):
 
 
 @_dataclass
-class IntervalOp(Interval):
+class _IntervalOp(Interval):
+    """
+    A base class for operators that take in an Interval and a Shift and produce an Interval.
+    """
     interval: Interval
     shift: Shift
     start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
@@ -726,7 +755,24 @@ class IntervalOp(Interval):
 
 
 @_dataclass
-class Last(IntervalOp):
+class Last(_IntervalOp):
+    """
+    The closest preceding interval matching the specified Shift.
+    For example, "over the past four days" when spoken on 1 Nov 2024 would be represented as::
+
+        Last(Interval.of(2024, 11, 1), Period(DAY, 4))
+
+    Similarly, "the previous summer" when spoken on 14 Feb 1912 would be represented as::
+
+        Last(Interval.of(1912, 2, 14), Summer())
+
+    By default, the resulting interval must end by the start of the input interval, but :code:`interval_included=True`
+    will allow the resulting interval to end as late as the end of the input interval.
+    For example, if text written on Tue 8 Nov 2016 wrote "arrived on Tuesday" with the intention of "arrived today"
+    (a common practice in news articles), it would be represented as::
+
+        Last(Interval.of(2016, 11, 8), Repeating(DAY, WEEK, value=1), interval_included=True)
+    """
     interval_included: bool = False
     span: (int, int) = dataclasses.field(default=None, repr=False)
 
@@ -743,7 +789,21 @@ class Last(IntervalOp):
 
 
 @_dataclass
-class Next(IntervalOp):
+class Next(_IntervalOp):
+    """
+    The closest following interval matching the specified Shift.
+    For example, "the next three hours" when spoken on 1 Nov 2024 would be represented as::
+
+        Next(Interval.of(2024, 11, 1), Period(HOUR, 3))
+
+    Similarly, "the coming week" when spoken on 14 Feb 1912 would be represented as::
+
+        Next(Interval.of(1912, 2, 14), Repeating(WEEK))
+
+    By default, the resulting interval must not start before the end of the input interval,
+    but :code:`interval_included=True` will allow the resulting interval to start as early as the start of the input
+    interval.
+    """
     interval_included: bool = False
     span: (int, int) = dataclasses.field(default=None, repr=False)
 
@@ -766,7 +826,21 @@ class Next(IntervalOp):
 
 
 @_dataclass
-class Before(IntervalOp):
+class Before(_IntervalOp):
+    """
+    Moves the input Interval earlier by the specified Shift the specified number of times.
+    For example, "a year ago" written on 13 Sep 1595 would be represented as::
+
+        Before(Interval.of(1595, 9, 13), Period(YEAR, 1))
+
+    Similarly, "two Tuesdays before" written on Sat 23 Jan 1993 would be represented as::
+
+        Before(Interval.of(1993, 1, 23), Repeating(DAY, WEEK, value=1), n=2)
+
+    By default, the resulting interval must end by the start of the input interval,
+    but when the Shift is a Repeating, :code:`interval_included=True` will allow the resulting interval to end as late
+    as the end of the input interval.
+    """
     n: int = 1
     interval_included: bool = False
     span: (int, int) = dataclasses.field(default=None, repr=False)
@@ -795,7 +869,21 @@ class Before(IntervalOp):
 
 
 @_dataclass
-class After(IntervalOp):
+class After(_IntervalOp):
+    """
+    Moves the input Interval later by the specified Shift the specified number of times.
+    For example, "a month later" written on 13 Sep 1595 would be represented as::
+
+        After(Interval.of(1595, 9, 13), Period(MONTH, 1))
+
+    Similarly, "three Aprils after" written on Sat 23 Jan 1993 would be represented as::
+
+        After(Interval.of(1993, 1, 23), Repeating(MONTH, YEAR, value=4), n=3)
+
+    By default, the resulting interval must not start before the end of the input interval,
+    but when the Shift is a Repeating, :code:`interval_included=True` will allow the resulting interval to start as
+    early as the start of the input interval.
+    """
     n: int = 1
     interval_included: bool = False
     span: (int, int) = dataclasses.field(default=None, repr=False)
@@ -826,7 +914,23 @@ class After(IntervalOp):
 
 
 @_dataclass
-class Nth(IntervalOp):
+class Nth(_IntervalOp):
+    """
+    Selects the nth repetition of a Shift starting from one end of the Interval.
+    For example, "second hour of the meeting" for a meeting at 09:30-12:30 on 30 Mar 2007 would be represented as::
+
+        Nth(Interval.fromisoformat("2007-03-30T09:30 2007-03-30T12:30"), Period(HOUR, 1), index=2)
+
+    Similarly, "fiftieth day of 2016" would be represented as::
+
+        Nth(Year(2016), Repeating(DAY), index=50)
+
+    By default, Nth will start from the start and count forward in time, but with :code:`from_end=True` Nth will instead
+    start from the end and count backward in time.
+    For example, "third-to-last Sunday of 2024" would be represented as::
+
+        Nth(Year(2024), Repeating(DAY, WEEK, value=6), index=3, from_end=True)
+    """
     index: int
     from_end: bool = False
     span: (int, int) = dataclasses.field(default=None, repr=False)
@@ -851,7 +955,20 @@ class Nth(IntervalOp):
 
 
 @_dataclass
-class This(IntervalOp):
+class This(_IntervalOp):
+    """
+    For period Shifts, creates an interval of the given length centered at the given interval.
+    For example, "these six days" spoken on 29 Apr 1176 would be interpreted as
+    [1176-04-26T12:00:00, 1176-05-02T12:00:00) and represented as::
+
+        This(Interval.of(1176, 4, 29), Period(DAY, 6))
+
+    For repeating Shifts, finds the Shift range containing this interval, then finds the Shift unit within that range.
+    For example, "this January" spoken on 10 Nov 1037 would be interpreted as
+    [1037-01-01T00:00:00, 1037-02-01T00:00:00) and represented as::
+
+        This(Interval.of(1037, 11, 10), Repeating(MONTH, YEAR, value=1))
+    """
     interval: Interval
     shift: Shift
     start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
@@ -871,13 +988,30 @@ class This(IntervalOp):
                 if (self.end + self.shift).end < self.interval.end:
                     raise ValueError(f"there is more than one {self.shift} in {self.interval.isoformat()}")
         elif isinstance(self.shift, (Period, PeriodSum)):
-            self.start, self.end = self.shift.expand(self.interval)
+            if self.shift.unit is None or self.shift.n is None:
+                self.start = self.end = None
+            else:
+                self.start, self.end = self.shift.unit.expand(self.interval, self.shift.n)
         else:
             raise NotImplementedError
 
 
 @_dataclass
 class Between(Interval):
+    """
+    Selects the interval between a start and an end interval.
+    For example, "since 1994" written on 09 Jan 2007 and interpreted as [1995-01-01T00:00:00, 2007-01-09T00:00:00)
+    would be represented as::
+
+        Between(Year(1994), Interval.of(2007, 1, 9))
+
+    If :code:`start_included=False`, starts from the end of `start_interval`, otherwise, starts from the start.
+    If :code:`end_included=False`, ends at the start of `end_interval`, otherwise ends at the end.
+    So "since 1994" written on 09 Jan 2007 and interpreted as [1994-01-01T00:00:00, 2007-01-10T00:00:00)
+    would be represented as::
+
+        Between(Year(1994), Interval.of(2007, 1, 9), start_included=True, end_included=True)
+    """
     start_interval: Interval
     end_interval: Interval
     start_included: bool = False
@@ -901,6 +1035,13 @@ class Between(Interval):
 
 @_dataclass
 class Intersection(Interval):
+    """
+    Selects the interval in which all given intervals overlap.
+    For example, "Earlier that day" in the context of "We met at 6:00 on 24 Jan 1979. Earlier that day..." would be
+    interpreted as [1979-01-24T00:00:00, 1979-01-24T06:00:00) and represented as::
+
+        Intersection([Last(Interval.of(1979, 1, 24, 6), None), Interval.of(1979, 1, 24)])
+    """
     intervals: typing.Iterable[Interval]
     start: datetime.datetime | None = dataclasses.field(init=False, repr=False)
     end: datetime.datetime | None = dataclasses.field(init=False, repr=False)
@@ -917,13 +1058,18 @@ class Intersection(Interval):
 
 
 class Intervals(collections.abc.Iterable[Interval], abc.ABC):
-    def isoformats(self) -> collections.abc.Iterator[str]:
-        for interval in self:
-            yield interval.isoformat()
+    """
+    A collection of intervals on the timeline.
+    """
+    def isoformats(self) -> list[str]:
+        return [interval.isoformat() for interval in self]
 
 
 @_dataclass
 class _N(Intervals):
+    """
+    A base class for operators that in an Interval, a Shift, and an integer, and produce an Interval.
+    """
     interval: Interval
     shift: Shift
     n: int
@@ -948,6 +1094,12 @@ class _N(Intervals):
 
 @_dataclass
 class LastN(_N):
+    """
+    Repeats the `Last` operation n times.
+    For example, "the previous two summers" when written on 29 May 1264 would be represented as::
+
+        LastN(Interval.of(1264, 5, 29), Summer(), n=2)
+    """
     base_class: type = Last
     span: (int, int) = dataclasses.field(default=None, repr=False)
 
@@ -957,6 +1109,12 @@ class LastN(_N):
 
 @_dataclass
 class NextN(_N):
+    """
+    Repeats the `Next` operation n times.
+    For example, "the next six Fridays" when written on Sat 22 Dec 1714 would be represented as::
+
+        NextN(Interval.of(1714, 12, 22), Repeating(DAY, WEEK, value=4), n=6)
+    """
     base_class: type = Next
     span: (int, int) = dataclasses.field(default=None, repr=False)
 
@@ -966,6 +1124,12 @@ class NextN(_N):
 
 @_dataclass
 class NthN(Intervals):
+    """
+    Selects a specified number of nth repetitions of a Shift starting from one end of the Interval.
+    For example, "the second six Mondays of 1997" would be represented as::
+
+        NthN(Year(1997), Repeating(DAY, WEEK, value=0), index=2, n=6)
+    """
     interval: Interval
     shift: Shift
     index: int
@@ -988,6 +1152,12 @@ class NthN(Intervals):
 
 @_dataclass
 class These(Intervals):
+    """
+    Finds the Shift range containing this interval, then finds the Shift units within that range.
+    For example, "Tuesdays and Thursdays in January 2025" would be represented as::
+
+        These(Interval.of(2025, 1), ShiftUnion([Repeating(DAY, WEEK, value=1), Repeating(DAY, WEEK, value=3)]))
+    """
     interval: Interval
     shift: Shift
     span: (int, int) = dataclasses.field(default=None, repr=False)
@@ -1026,7 +1196,16 @@ class These(Intervals):
                 interval = interval.end + self.shift
 
 
-def from_xml(elem: et.Element, known_intervals: dict[(int, int), Interval] = None):
+def from_xml(elem: et.Element,
+             known_intervals: dict[(int, int), Interval] = None) -> list[Shift | Interval | Intervals]:
+    """
+    Reads Intervals and Shifts from SCATE Anafora XML.
+
+    :param elem: The root <data> element of a SCATE Anafora XML document.
+    :param known_intervals: A mapping from character offset spans to Intervals, representing intervals that are already
+    known before parsing begins. The document creation time should be specified with the span (None, None).
+    :return: Intervals and Shifts corresponding to the XML definitions.
+    """
     if known_intervals is None:
         known_intervals = {}
 
@@ -1317,6 +1496,9 @@ def from_xml(elem: et.Element, known_intervals: dict[(int, int), Interval] = Non
 
 
 class AnaforaXMLParsingError(RuntimeError):
+    """
+    An exception thrown when `from_xml` is unable to parse a valid Shift, Interval, or Intervals from an Anafora XML
+    """
     def __init__(self, entity: et.Element, trigger_span: (int, int)):
         self.entity = entity
         self.trigger_span = trigger_span
@@ -1324,9 +1506,13 @@ class AnaforaXMLParsingError(RuntimeError):
 
 
 def flatten(shift_or_interval: Shift | Interval) -> Shift | Interval:
+    """
+    Flattens any nested RepeatingIntersection objects.
+
+    :param shift_or_interval: The object to flatten
+    :return: A copy with any nested RepeatingIntersection replaced with a single nested RepeatingIntersection.
+    """
     match shift_or_interval:
-        case IntervalOp() as io:
-            return dataclasses.replace(io, shift=flatten(io.shift))
         case RepeatingIntersection() as ri if any(isinstance(o, RepeatingIntersection) for o in ri.shifts):
             shifts = []
             for shift in ri.shifts:
@@ -1336,6 +1522,8 @@ def flatten(shift_or_interval: Shift | Interval) -> Shift | Interval:
                 else:
                     shifts.append(shift)
             return dataclasses.replace(ri, shifts=shifts)
+        case has_shift if hasattr(has_shift, "shift"):
+            return dataclasses.replace(has_shift, shift=flatten(has_shift.shift))
         case _:
             return shift_or_interval
 

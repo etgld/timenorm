@@ -9,6 +9,8 @@ def test_interval():
     assert scate.Interval.of(1985, 6, 17).isoformat() == "1985-06-17T00:00:00 1985-06-18T00:00:00"
     assert scate.Interval.of(1985, 6, 17, 23).isoformat() == "1985-06-17T23:00:00 1985-06-18T00:00:00"
     assert scate.Interval.of(1985, 6, 17, 23, 0).isoformat() == "1985-06-17T23:00:00 1985-06-17T23:01:00"
+    with pytest.raises(ValueError):
+        scate.Interval.of(1, 2, 3, 4, 5, 6, 7, 8)
 
 
 def test_unit_truncate():
@@ -40,7 +42,6 @@ def test_period():
     period = scate.Period(None, 3)  # Unknown unit
     assert (date + period).isoformat() == "2000-01-01T00:00:00 ..."
     assert (date - period).isoformat() == "... 2000-01-01T00:00:00"
-    assert period.expand(date).isoformat() == "... ..."
 
 
 def test_period_sum():
@@ -512,6 +513,9 @@ def test_this():
     interval = scate.Interval.fromisoformat("2016-07-01T10:00:00 2016-07-01T11:00:00")
     assert scate.This(interval, scate.Noon()).isoformat() == "2016-07-01T12:00:00 2016-07-01T12:01:00"
 
+    assert scate.This(interval, scate.Period(None, 1)).isoformat() == "... ..."
+    assert scate.This(interval, scate.Period(scate.YEAR, None)).isoformat() == "... ..."
+
 
 def test_between():
     year1 = scate.Year(1999)
@@ -558,38 +562,37 @@ def test_n():
     day = scate.Repeating(scate.DAY)
     month = scate.Repeating(scate.MONTH)
 
-    assert [x.isoformat() for x in scate.LastN(interval, may, 3)] == \
+    assert scate.LastN(interval, may, 3).isoformats() == \
            [f"{y}-05-01T00:00:00 {y}-06-01T00:00:00" for y in [2001, 2000, 1999]]
-    assert [x.isoformat() for x in scate.NextN(interval, may, 3)] == \
+    assert scate.NextN(interval, may, 3).isoformats() == \
            [f"{y}-05-01T00:00:00 {y}-06-01T00:00:00" for y in [2004, 2005, 2006]]
 
-    assert [x.isoformat() for x in scate.LastN(interval, day, 5)] == \
+    assert scate.LastN(interval, day, 5).isoformats() == \
            [f"2002-03-{d}T00:00:00 2002-03-{d + 1}T00:00:00" for d in [21, 20, 19, 18, 17]]
-    assert [x.isoformat() for x in scate.NextN(interval, day, 5)] == \
+    assert scate.NextN(interval, day, 5).isoformats() == \
            [f"2003-05-{d}T00:00:00 2003-05-{d + 1}T00:00:00" for d in [11, 12, 13, 14, 15]]
 
-    last_day_included = scate.LastN(interval, day, 1, interval_included=True)
-    assert [x.isoformat() for x in last_day_included] == ["2003-05-09T00:00:00 2003-05-10T00:00:00"]
-    next_3_days_included = scate.NextN(interval, day, 3, interval_included=True)
-    assert [x.isoformat() for x in next_3_days_included] == \
+    assert scate.LastN(interval, day, 1, interval_included=True).isoformats() == \
+           ["2003-05-09T00:00:00 2003-05-10T00:00:00"]
+    assert scate.NextN(interval, day, 3, interval_included=True).isoformats() == \
            [f"2002-03-{d}T00:00:00 2002-03-{d+1}T00:00:00" for d in [23, 24, 25]]
 
     # the first 9 months in 1997
-    assert [x.isoformat() for x in scate.NthN(scate.Year(1997), month, index=1, n=9)] == \
+    assert scate.NthN(scate.Year(1997), month, index=1, n=9).isoformats() == \
            [scate.Interval.of(1997, i).isoformat() for i in range(1, 10)]
 
     # the third two days in 1997
-    assert [x.isoformat() for x in scate.NthN(scate.Year(1997), day, index=3, n=2)] == \
+    assert scate.NthN(scate.Year(1997), day, index=3, n=2).isoformats() == \
            [scate.Interval.of(1997, 1, i).isoformat() for i in range(5, 7)]
 
     # a few days (n=None)
-    assert list(scate.LastN(interval, day, None).isoformats()) == \
+    assert scate.LastN(interval, day, None).isoformats() == \
            ["2002-03-21T00:00:00 2002-03-22T00:00:00", "... 2002-03-21T00:00:00"]
-    assert list(scate.NextN(interval, day, None).isoformats()) == \
+    assert scate.NextN(interval, day, None).isoformats() == \
            ["2003-05-11T00:00:00 2003-05-12T00:00:00", "2003-05-12T00:00:00 ..."]
-    assert list(scate.NthN(interval, day, index=1, n=None).isoformats()) == \
+    assert scate.NthN(interval, day, index=1, n=None).isoformats() == \
            ["2002-03-23T00:00:00 2002-03-24T00:00:00", "2002-03-24T00:00:00 ..."]
-    assert list(scate.NthN(interval, day, index=1, n=None, from_end=True).isoformats()) == \
+    assert scate.NthN(interval, day, index=1, n=None, from_end=True).isoformats() == \
            ["2003-05-09T00:00:00 2003-05-10T00:00:00", "... 2003-05-09T00:00:00"]
 
 
@@ -598,27 +601,27 @@ def test_these():
     # These(Tue 1 Feb, Fri) => Fri 4 Feb
     interval_tue = scate.Interval.fromisoformat("2005-02-01T03:22 2005-02-02T00:00")
     friday = scate.Repeating(scate.DAY, scate.WEEK, value=4)
-    assert [x.isoformat() for x in scate.These(interval_tue, friday)] == \
+    assert scate.These(interval_tue, friday).isoformats() == \
            [scate.Interval.of(2005, 2, 4).isoformat()]
 
     # These(Sat 8 Mar until Fri 14 Mar, Fri) => Fri 7 Mar, Fri 14 Mar
     interval_week_sat = scate.Interval.fromisoformat("2003-03-08 2003-03-14")
-    assert [x.isoformat() for x in scate.These(interval_week_sat, friday)] == \
+    assert scate.These(interval_week_sat, friday).isoformats() == \
            [scate.Interval.of(2003, 3, x).isoformat() for x in [7, 14]]
 
     # These(Thu 10 Apr until Thu 17 Apr, Fri) => Fri 11 Apr, Fri 18 Apr
     interval_week_thu = scate.Interval.fromisoformat("2003-04-10 2003-04-17")
-    assert [x.isoformat() for x in scate.These(interval_week_thu, friday)] == \
+    assert scate.These(interval_week_thu, friday).isoformats() == \
            [scate.Interval.of(2003, 4, x).isoformat() for x in [11, 18]]
 
     # These(22 Mar 2002 until 10 Feb 2003, Mar) => Mar 2002, Mar 2003
     interval_11_months = scate.Interval.fromisoformat("2002-03-22T11:30:30 2003-02-10T22:10:20")
     march = scate.Repeating(scate.MONTH, scate.YEAR, value=3)
-    assert [x.isoformat() for x in scate.These(interval_11_months, march)] == \
+    assert scate.These(interval_11_months, march).isoformats() == \
            [scate.Interval.of(x, 3).isoformat() for x in [2002, 2003]]
 
     # These(Thu 10 Apr until Thu 17 Apr, Mar) => Mar 2003
-    assert [x.isoformat() for x in scate.These(interval_week_thu, march)] == \
+    assert scate.These(interval_week_thu, march).isoformats() == \
            [scate.Interval.of(2003, 3).isoformat()]
 
     # These(22 Mar 2002 until 10 Feb 2003, Fri) => ... 48 Fridays ...
@@ -626,17 +629,17 @@ def test_these():
 
     # These(Tue 1 Feb, Week) => Mon 31 Jan through Sun 6 Feb
     week = scate.Repeating(scate.WEEK)
-    assert [x.isoformat() for x in scate.These(interval_tue, week)] == \
+    assert scate.These(interval_tue, week).isoformats() == \
            ["2005-01-31T00:00:00 2005-02-07T00:00:00"]
 
     # These(Thu 10 Apr until Thu 17 Apr, Mar) => Mar 2003
     month = scate.Repeating(scate.MONTH)
-    assert [x.isoformat() for x in scate.These(interval_week_thu, month)] == \
+    assert scate.These(interval_week_thu, month).isoformats() == \
            [scate.Interval.of(2003, 4).isoformat()]
 
     # These(22 Mar 2002 until 10 Feb 2003, Year) => 2002, 2003
     year = scate.Repeating(scate.YEAR)
-    assert [x.isoformat() for x in scate.These(interval_11_months, year)] == \
+    assert scate.These(interval_11_months, year).isoformats() == \
            [scate.Year(x).isoformat() for x in [2002, 2003]]
 
     # These(Thu 10 Apr until Thu 17 Apr, day) => ... 7 days ...
@@ -677,6 +680,13 @@ def test_flatten():
             scate.Repeating(scate.HOUR, scate.DAY, value=7),
             scate.Repeating(scate.MINUTE, scate.HOUR, value=7),
          ]))),
+        (scate.LastN(scate.Interval.of(1211, 7),
+                     scate.RepeatingIntersection([scate.RepeatingIntersection([
+                         scate.Repeating(scate.MINUTE, scate.HOUR, value=7)])]),
+                     n=5),
+         scate.LastN(scate.Interval.of(1211, 7),
+                     scate.RepeatingIntersection([scate.Repeating(scate.MINUTE, scate.HOUR, value=7)]),
+                     n=5)),
     ]:
         assert scate.flatten(obj) == obj_flat
 
@@ -708,10 +718,10 @@ def test_none_values():
     assert scate.This(undef, d08).isoformat() == "... ..."
     assert scate.Between(undef, undef).isoformat() == "... ..."
     assert scate.Intersection([undef, undef]).isoformat() == "... ..."
-    assert list(scate.LastN(undef, d08, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.NextN(undef, d08, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.NthN(undef, d08, index=5, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.These(undef, d08).isoformats()) == ["... ..."]
+    assert scate.LastN(undef, d08, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.NextN(undef, d08, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.NthN(undef, d08, index=5, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.These(undef, d08).isoformats() == ["... ..."]
 
     assert scate.Last(undef, None).isoformat() == "... ..."
     assert scate.Next(undef, None).isoformat() == "... ..."
@@ -723,10 +733,10 @@ def test_none_values():
     assert scate.Between(date, undef).isoformat() == "... ..."
     assert scate.Intersection([undef, date]).isoformat() == "... ..."
     assert scate.Intersection([date, undef]).isoformat() == "... ..."
-    assert list(scate.LastN(undef, None, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.NextN(undef, None, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.NthN(undef, None, index=5, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.These(undef, None).isoformats()) == ["... ..."]
+    assert scate.LastN(undef, None, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.NextN(undef, None, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.NthN(undef, None, index=5, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.These(undef, None).isoformats() == ["... ..."]
 
     assert scate.Last(date, None).isoformat() == "... 2016-10-18T00:00:00"
     assert scate.Next(date, None).isoformat() == "2016-10-19T00:00:00 ..."
@@ -734,10 +744,10 @@ def test_none_values():
     assert scate.After(date, None).isoformat() == "2016-10-19T00:00:00 ..."
     assert scate.Nth(date, None, index=5).isoformat() == "... ..."
     assert scate.This(date, None).isoformat() == "... ..."
-    assert list(scate.LastN(date, None, n=3).isoformats()) == ["... 2016-10-18T00:00:00", "... ...", "... ..."]
-    assert list(scate.NextN(date, None, n=3).isoformats()) == ["2016-10-19T00:00:00 ...", "... ...", "... ..."]
-    assert list(scate.NthN(date, None, index=5, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.These(date, None).isoformats()) == ["... ..."]
+    assert scate.LastN(date, None, n=3).isoformats() == ["... 2016-10-18T00:00:00", "... ...", "... ..."]
+    assert scate.NextN(date, None, n=3).isoformats() == ["2016-10-19T00:00:00 ...", "... ...", "... ..."]
+    assert scate.NthN(date, None, index=5, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.These(date, None).isoformats() == ["... ..."]
 
     assert scate.Last(date, p_unk).isoformat() == "... 2016-10-18T00:00:00"
     assert scate.Next(date, p_unk).isoformat() == "2016-10-19T00:00:00 ..."
@@ -745,10 +755,10 @@ def test_none_values():
     assert scate.After(date, p_unk).isoformat() == "... ..."
     assert scate.Nth(date, p_unk, index=5).isoformat() == "... ..."
     assert scate.This(date, p_unk).isoformat() == "... ..."
-    assert list(scate.LastN(date, p_unk, n=3).isoformats()) == ["... 2016-10-18T00:00:00", "... ...", "... ..."]
-    assert list(scate.NextN(date, p_unk, n=3).isoformats()) == ["2016-10-19T00:00:00 ...", "... ...", "... ..."]
-    assert list(scate.NthN(date, p_unk, index=5, n=3).isoformats()) == ["... ...", "... ...", "... ..."]
-    assert list(scate.These(date, p_unk).isoformats()) == ["... ..."]
+    assert scate.LastN(date, p_unk, n=3).isoformats() == ["... 2016-10-18T00:00:00", "... ...", "... ..."]
+    assert scate.NextN(date, p_unk, n=3).isoformats() == ["2016-10-19T00:00:00 ...", "... ...", "... ..."]
+    assert scate.NthN(date, p_unk, index=5, n=3).isoformats() == ["... ...", "... ...", "... ..."]
+    assert scate.These(date, p_unk).isoformats() == ["... ..."]
 
 
 def test_min_date():
@@ -792,7 +802,7 @@ def test_misc():
 
     # NYT19980206.0460 (2979,3004) first nine months of 1997
     month = scate.Repeating(scate.MONTH)
-    assert [x.isoformat() for x in scate.NthN(scate.Year(1997), month, 1, 9)] == \
+    assert scate.NthN(scate.Year(1997), month, 1, 9).isoformats() == \
         [scate.Interval.of(1997, m).isoformat() for m in range(1, 10)]
 
     # wsj_0346 (889,894) year ended March 31
